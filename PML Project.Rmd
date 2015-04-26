@@ -1,0 +1,128 @@
+---
+title: "Practical Machine Learning Project"
+author: "BillSeliger"
+date: "Sunday, April 26, 2015"
+output: html_document
+---
+## Experiment Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+## Project Goal
+The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the "Class" or method in which they are performing an exercise. The participants were asked to perform barbell lifts one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions. The 5 classes (methods of lifting) to be predicted are:
+Class A - exactly according to the specification
+Class B - throwing the elbows to the front
+Class C - lifting the dumbbell only halfway
+Class D - lowering the dumbbell only halfway
+Class E - throwing the hips to the front
+
+The data for this project comes from this source: http://groupware.les.inf.puc-rio.br/har. The providers of the data have been very generous in allowing their data to be used for this project.  More information about the data and experiment design is available here - 
+http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3YRU5YMeY
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+## Data gathering and cleansing
+First, require the caret package and load the testing and training datasets if they don't already exist in the R environment:
+```{r, warning=FALSE, message=FALSE}
+setwd("C:/Users/rr046302/Documents/Bill's Stuff/Coursera/Practical Machine Learning/Practical-Machine-Learning")
+require(caret)
+if (!exists("training")){training <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!", ""), colClasses = c("character")) }
+if (!file.exists("testing")){testing <- read.csv("pml-testing.csv", na.strings = c("NA", "#DIV/0!", ""), colClasses = c("character")) }
+```
+The data will be cleaned, first removing superfluous variables that are not pertinent to the objective.  Note that this is done for both the training and testing datasets.
+```{r}
+## drop a lot of unneeded variables
+drops <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+training <- training[,!(names(training) %in% drops)]
+testing <- testing[,!(names(testing) %in% drops)]
+```
+Many of the variables have a great number of NAs - these are explored with the sapply function below
+```{r}
+sort(sapply(training, function(x) sum(is.na(x))))
+```
+The variables with little to add because of their high volume of NAs are also dropped, again for both the training and testing datasets
+```{r}
+## drop a lot of unneeded variables
+drops <- c("kurtosis_roll_belt","max_roll_belt","max_picth_belt","min_roll_belt","min_pitch_belt","amplitude_roll_belt",
+           "amplitude_pitch_belt","var_total_accel_belt","avg_roll_belt","stddev_roll_belt","var_roll_belt","avg_pitch_belt",
+           "stddev_pitch_belt", "var_pitch_belt","avg_yaw_belt","stddev_yaw_belt","var_yaw_belt","var_accel_arm",
+           "avg_roll_arm","stddev_roll_arm","var_roll_arm","avg_pitch_arm","stddev_pitch_arm","var_pitch_arm","avg_yaw_arm",
+           "stddev_yaw_arm","var_yaw_arm","max_roll_arm","max_picth_arm","max_yaw_arm","min_roll_arm","min_pitch_arm",
+           "min_yaw_arm","amplitude_roll_arm","amplitude_pitch_arm","amplitude_yaw_arm","max_roll_dumbbell",
+           "max_picth_dumbbell","min_roll_dumbbell","min_pitch_dumbbell","amplitude_roll_dumbbell","amplitude_pitch_dumbbell",
+           "var_accel_dumbbell","avg_roll_dumbbell","stddev_roll_dumbbell","var_roll_dumbbell","avg_pitch_dumbbell",
+           "stddev_pitch_dumbbell","var_pitch_dumbbell","avg_yaw_dumbbell","stddev_yaw_dumbbell","var_yaw_dumbbell",
+           "max_roll_forearm","max_picth_forearm","min_roll_forearm","min_pitch_forearm","amplitude_roll_forearm",
+           "amplitude_pitch_forearm","var_accel_forearm","avg_roll_forearm","stddev_roll_forearm","var_roll_forearm",
+           "avg_pitch_forearm","stddev_pitch_forearm","var_pitch_forearm","avg_yaw_forearm","stddev_yaw_forearm",
+           "var_yaw_forearm","skewness_pitch_dumbbell","kurtosis_picth_dumbbell","skewness_roll_dumbbell",
+           "kurtosis_roll_dumbbell","max_yaw_dumbbell","min_yaw_dumbbell","amplitude_yaw_dumbbell","skewness_roll_belt",
+           "kurtosis_roll_belt","max_yaw_belt","min_yaw_belt","amplitude_yaw_belt","kurtosis_yaw_arm","skewness_yaw_arm",
+           "kurtosis_picth_belt","skewness_roll_belt.1","skewness_roll_arm","kurtosis_roll_arm","kurtosis_picth_arm",
+           "skewness_pitch_arm","skewness_roll_forearm","kurtosis_roll_forearm","max_yaw_forearm","min_yaw_forearm",
+           "amplitude_yaw_forearm","kurtosis_picth_forearm","skewness_pitch_forearm","kurtosis_yaw_belt","skewness_yaw_belt",
+           "kurtosis_yaw_dumbbell","skewness_yaw_dumbbell","kurtosis_yaw_forearm","skewness_yaw_forearm")
+training <- training[,!(names(training) %in% drops)]
+testing <- testing[,!(names(testing) %in% drops)]
+```
+This leaves us with 52 variables in the training dataframe, and a matching testing dataframe without the classe outcome.  All of the variables except classe (the outcome) will be coerced to numeric and the outcome, classe, will be coerced to a factor variable.  Note that this is done for both testing and training
+```{r}
+for (i in 1:52){training[,i] <- as.numeric(training[,i])}
+for (i in 1:52){testing[,i] <- as.numeric(testing[,i])}
+training$classe <- as.factor(training$classe)
+```
+
+##Creation of Cross Validation dataset
+The training dataset will be separated into a training and cross validation dataset that will be used for verifying the accuracy of the model during testing and development of the model.  70% of the data will be in the training set and 30% in the test set.  Although randomForest has built-in cross validation this is used to validate other models that may be considered.  Check the dimensions of the training, testing, and crossval datasets:  
+```{r}
+inTrain = createDataPartition(training$classe, p=0.7, list=FALSE)
+training = training[ inTrain,]
+crossval = training[-inTrain,]
+dim(training)
+dim(crossval)
+dim(testing)
+```
+
+## Model development
+The randomForest classification method is selected as the author is working with this model in a Kaggle competition and needs the practice; it has been proven to be an robust predictor for cases such as this.  
+```{r, cache=TRUE, warning=FALSE, message=FALSE}
+model <- train(classe ~ ., data = training, method = "rf", allowParallel=TRUE)
+```
+The accuracy on the training dataset is explored and found to be 100%
+```{r}
+RF_train_pred <- predict (model, newdata = training)
+confusionMatrix(RF_train_pred, training$classe)
+```
+
+## Cross Validation
+To determine that we are not overfitting, predictions are made on the cross validation data
+```{r}
+RF_pred <- predict (model, newdata = crossval)
+confusionMatrix(RF_pred, crossval$classe)
+```
+The Confidenence Interval on the Cross Validation data is extremely high (95% CI : (0.9991, 1)), showing that this is a robust model and should predict outcomes with a high degree of accuracy for data for which the outcome is not known.  
+
+## Conclusion
+The randomForest model is extremely accurate for this dataset and should prove to be a very useful model for prediction.  It should be noted that the domain (predicting type of exercise) would perhaps call for a high degree of accuracy as subjects could potentially harm themselves while performing this exercise.  The author believes the accuracy exhibited by the chosen model is an appropriate choice.   
+
+## Predictions on Testing dataset
+Predictions are made on the testing dataset that will be used for submission of the predictions
+```{r}
+answers <- predict(model, newdata = testing)
+```
+
+# Submission of Testing predictions
+A provided function is used to create a submission file for each testing observation
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
